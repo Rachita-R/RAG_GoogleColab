@@ -1,108 +1,28 @@
-#1
-import sys
-assert sys.version_info >= (3, 10) and sys.version_info < (3, 13), "Use Python 3.10, 3.11, or 3.12 to run this notebook."
+#RAG Google Colab
+This section of the notebook initializes a vector database using Milvus with LangChain. 
+It creates a temporary .db file to store and retrieve embedding vectors generated from documents or queries. 
+This setup is essential in RAG (Retrieval-Augmented Generation) pipelines, allowing efficient similarity search during response generation.
 
-#2
-%pip install git+https://github.com/ibm-granite-community/utils \
-    transformers \
-    langchain_community \
-    'langchain_huggingface[full]' \
-    langchain_milvus \
-    replicate \
-    wget
+The key steps include:
+Importing Milvus and tempfile
+Creating a temporary database file
+Initializing the Milvus vector store with the embedding model and file path
 
-#3
-from langchain_huggingface import HuggingFaceEmbeddings
-from transformers import AutoTokenizer
+🔁 You can replace Milvus with another vector store (like FAISS, Pinecone, or Chroma) by referring to LangChain’s vector store documentation.
 
-embeddings_model_path = "ibm-granite/granite-embedding-30m-english"
-embeddings_model = HuggingFaceEmbeddings(
-    model_name=embeddings_model_path,
-)
-embeddings_tokenizer = AutoTokenizer.from_pretrained(embeddings_model_path)
 
-#4
-from langchain_milvus import Milvus
-import tempfile
+# Choose Your Vector Database (LangChain + Milvus)
+This section of the notebook sets up a **local vector database** using **Milvus** through LangChain, allowing storage and retrieval of embedding vectors for use in Retrieval-Augmented Generation (RAG) workflows.
 
-db_file = tempfile.NamedTemporaryFile(prefix="milvus_", suffix=".db", delete=False).name
-print(f"The vector database will be saved to {db_file}")
 
-vector_db = Milvus(
-    embedding_function=embeddings_model,
-    connection_args={"uri": db_file},
-    auto_id=True,
-    index_params={"index_type": "AUTOINDEX"},
-)
+## Purpose
+In RAG pipelines, we need a vector database to:
+- **Store document embeddings**
+- **Retrieve similar documents** based on user queries
+This example uses a **local instance of Milvus** via a temporary `.db` file created at runtime.
 
-#5
-from langchain_community.llms import Replicate
-from ibm_granite_community.notebook_utils import get_env_var
 
-model_path = "ibm-granite/granite-3.3-8b-instruct"
-model = Replicate(
-    model=model_path,
-    replicate_api_token=get_env_var('REPLICATE_API_TOKEN'),
-)
-tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-#6
-import os
-import wget
-
-filename = 'state_of_the_union.txt'
-url = 'https://raw.githubusercontent.com/IBM/watson-machine-learning-samples/master/cloud/data/foundation_models/state_of_the_union.txt'
-
-if not os.path.isfile(filename):
-  wget.download(url, out=filename)
-
-#7
-from langchain.document_loaders import TextLoader
-from langchain.text_splitter import CharacterTextSplitter
-
-loader = TextLoader(filename)
-documents = loader.load()
-text_splitter = CharacterTextSplitter.from_huggingface_tokenizer(
-    tokenizer=embeddings_tokenizer,
-    chunk_size=embeddings_tokenizer.max_len_single_sentence,
-    chunk_overlap=0,
-)
-texts = text_splitter.split_documents(documents)
-doc_id = 0
-for text in texts:
-    text.metadata["doc_id"] = (doc_id:=doc_id+1)
-print(f"{len(texts)} text document chunks created")
-
-#8
-ids = vector_db.add_documents(texts)
-print(f"{len(ids)} documents added to the vector database")
-
-#9
-query = "What did the president say about Ketanji Brown Jackson?"
-docs = vector_db.similarity_search(query)
-print(f"{len(docs)} documents returned")
-for doc in docs:
-    print(doc)
-    print("=" * 80)  # Separator for clarity
-
-#10
-from ibm_granite_community.langchain import TokenizerChatPromptTemplate, create_stuff_documents_chain
-from langchain.chains.retrieval import create_retrieval_chain
-
-# Create a Granite prompt for question-answering with the retrieved context
-prompt_template = TokenizerChatPromptTemplate.from_template("{input}", tokenizer=tokenizer)
-
-# Assemble the retrieval-augmented generation chain
-combine_docs_chain = create_stuff_documents_chain(
-    llm=model,
-    prompt=prompt_template,
-)
-rag_chain = create_retrieval_chain(
-    retriever=vector_db.as_retriever(),
-    combine_docs_chain=combine_docs_chain,
-)
-
-#11
-output = rag_chain.invoke({"input": query})
-
-print(output['answer'])
+## Requirements
+Make sure the following libraries are installed in your Colab/virtual environment:
+```bash
+pip install langchain langchain-milvus
